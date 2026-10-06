@@ -1,4 +1,5 @@
 from pathlib import Path
+from itertools import product
 from time import perf_counter
 
 import kagglehub
@@ -74,9 +75,11 @@ def main():
     }
     models, rows = {}, []
     for method, cls in constructors.items():
-        for init in ("correlation", "multistart"):
-            name = f"{method} / {init}"
-            model = cls(init=init)
+        for init, sampling in product(
+            ("correlation", "multistart"), ("random", "margin", "combined")
+        ):
+            name = f"{method} / {init} / {sampling}"
+            model = cls(init=init, sampling=sampling)
             started = perf_counter()
             model.fit(X_train, y_train, X_val, y_val)
             elapsed = perf_counter() - started
@@ -98,11 +101,24 @@ def main():
         row.update({f"{split} {metric}": value for metric, value in metrics(ys, reference.predict(xs)).items()})
     rows.append(row)
 
-    print(pd.DataFrame(rows).set_index("Model").round(4).to_string())
+    results = pd.DataFrame(rows).set_index("Model")
+    print(results.round(4).to_string())
     output_dir = Path(__file__).resolve().parent.parent / "img"
     output_dir.mkdir(parents=True, exist_ok=True)
-    plot_q(models).savefig(output_dir / "q_history.png", dpi=160)
-    plot_margins(models, X_test, y_test).savefig(output_dir / "margins.png", dpi=160)
+    results.to_csv(output_dir / "sampling_comparison.csv")
+    combined_models = {name: model for name, model in models.items()
+                       if model.sampling == "combined"}
+    plot_q(combined_models).savefig(output_dir / "q_history.png", dpi=160)
+    plot_margins(combined_models, X_test, y_test).savefig(output_dir / "margins.png", dpi=160)
+    for method, init in product(constructors, ("correlation", "multistart")):
+        comparison = {sampling: models[f"{method} / {init} / {sampling}"]
+                      for sampling in ("random", "margin", "combined")}
+        for kind, fig in (("q", plot_q(comparison)),
+                          ("margins", plot_margins(comparison, X_test, y_test))):
+            fig.suptitle(f"{method} / {init}")
+            fig.tight_layout()
+            fig.savefig(output_dir / f"sampling_{method}_{init}_{kind}.png", dpi=160)
+            plt.close(fig)
     plt.close("all")
 
 

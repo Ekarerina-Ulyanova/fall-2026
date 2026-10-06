@@ -14,7 +14,9 @@ class LinearClassifier(ABC):
         pool_size=200,
         batch_size=16,
         seed=42,
+        sampling="combined", #margin/combined
     ):
+        self.sampling = sampling
         self.init = init
         self.n_starts = n_starts
         self.epochs = epochs
@@ -69,7 +71,15 @@ class LinearClassifier(ABC):
         self.db = float(np.mean(common))
 
     def _select_batch(self, X, y, rng):
+        n_batch = min(self.batch_size, len(X))
+        if self.sampling == "random":
+            indices = rng.choice(len(X), size=n_batch, replace=False)
+            return X[indices], y[indices]
+
         absolute_margins = np.abs(self.margins(X, y))
+        if self.sampling == "margin":
+            indices = np.argsort(absolute_margins, kind="stable")[:n_batch]
+            return X[indices], y[indices]
 
         n_pool = min(self.pool_size, len(X))
         pool = np.argpartition(absolute_margins, n_pool - 1)[:n_pool]
